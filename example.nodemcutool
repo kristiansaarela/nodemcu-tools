@@ -1,0 +1,7 @@
+{
+    "port": "COM5",
+    "connectionDelay": 100,
+    "compile": true,
+    "minify": true,
+    "keeppath": false
+}

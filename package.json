@@ -1,0 +1,13 @@
+{
+  "name": "nodemcu-tools",
+  "version": "1.0.0",
+  "main": "echo \"read 'readme.md'\"",
+  "repository": {},
+  "license": "MIT",
+  "script": {
+  	"upload-alpha": "./node_modules/.bin/nodemcu-tool upload alpha/init.lua --remotename init.lua"
+  },
+  "dependencies": {
+    "nodemcu-tool": "^3.0.2"
+  }
+}

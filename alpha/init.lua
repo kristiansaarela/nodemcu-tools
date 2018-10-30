@@ -1,7 +1,6 @@
+require 'config'
+
 runner = nil -- global timer object used to read dht sensor
-dht_pin = 4
-endpoint = "http://192.168.1.122:6060/node1" -- endpoint where to send data
-supports_float = false -- if supported, will send float values instead of integers
 
 -- for debugging. allows to print tables
 -- usage: table.foreach(object_to_look_at, inspect)
@@ -18,17 +17,25 @@ local function inspect(key, value)
 	end
 end
 
--- makes JSON payload from temp and humi and sends it to endpoint
-local function sendJSON(temp, humi)
-	local payload = "{\"temp\":"..temp..",\"humi\":"..humi.."}"
+-- makes JSON payload from temp, humi & lux and sends it to endpoint
+local function sendJSON(temp, humi, lux)
+	local payload = "{\"temp\":"..temp..",\"humi\":"..humi..",\"lux\":"..lux.."}"
+
+	if id_debug then
+		print("Sending payload: "..payload)
+	end
+
 	http.post(endpoint, nil, payload, function(code, body)
-		print("Got response from server")
-		print("Code: "..code)
-		print("Body: "..body)
+		if is_debug then
+			print("Got response from server")
+			print("Code: "..code)
+			print("Body: "..body)
+		end
+		return true
 	end)
 end
 
--- start dht sensor alarm runner
+-- start timer based main loop
 local function start()
 	if runner ~= nil then
 		runner:start()
@@ -36,18 +43,61 @@ local function start()
 	end
 
 	runner = tmr.create()
-	runner:alarm(1000, tmr.ALARM_AUTO, function()
+	runner:alarm(interval, tmr.ALARM_AUTO, function()
 		status, i_temp, i_humi, d_temp, d_humi = dht.read11(dht_pin)
 
-		if (status ~= dht.OK) then
-			print('Failed to read sensor: ', status)
+		if status ~= dht.OK then
+			if id_debug then
+				print('Failed to read DHT sensor: ', status)
+			end
 			return nil
 		end
 
-		if supports_float then
-			sendJSON(d_temp, d_humi)
-		else
-			sendJSON(i_temp, i_humi)
+		-- bh1750 (gy-302) light sensor
+		-- make sure it's connected to 3.3v
+		id = 0
+		i2c.setup(id, lux_sda_pin, lux_sci_pin, i2c.SLOW)
+		i2c.start(id)
+
+		-- by default, bh1750 is assigned to 0x23 address.
+		-- if some other component is already assigned to that address,
+		-- connect bh1750 addr pin to 3.3v and change 0x23 to 0x5C.
+		i2c.address(id, 0x23, i2c.TRANSMITTER)
+
+		-- with different modes, we can measure between 0.11 lx to 100 000 lx.
+		-- name, resolution, measurement time, payload
+		-- cont. h-res mode    1lx    120ms  0x10  (for dark)
+		-- cont. h-res mode2   0.5lx  120ms  0x11
+		-- cont. l-res mode    4lx     16ms  0x13  (for daylight)
+		-- 1 time h-res mode   1lx    120ms  0x20  
+		-- 1 time h-res mode2  0.5lx  120ms  0x21
+		-- 1 time l-res mode   4lx     16ms  0x23
+		i2c.write(id, 0x10)
+		i2c.stop(id)
+		i2c.start(id)
+		
+		-- read from sensor address
+		i2c.address(id, 0x23, i2c.RECEIVER)
+
+		-- wait 200ms
+		if not tmr.create():alarm(200, tmr.ALARM_SINGLE, function()
+			raw = i2c.read(id, 2)
+			i2c.stop(id)
+
+			lux_raw = raw:byte(1) * 256 + raw:byte(2)
+			lux = (lux_raw * 1000 / 12) / 100
+
+			if supports_float then
+				sendJSON(d_temp, d_humi, lux)
+			else
+				sendJSON(i_temp, i_humi, lux)
+			end
+		end) then
+			if supports_float then
+				sendJSON(d_temp, d_humi, 0)
+			else
+				sendJSON(i_temp, i_humi, 0)
+			end
 		end
 	end)
 end
@@ -60,29 +110,37 @@ local function stop()
 end
 
 local function onWifiConnected(info)
-	print("Connected to wifi")
-	table.foreach(info, inspect)
+	if is_debug then
+		print("Connected to wifi")
+		table.foreach(info, inspect)
+	end
 end
 
 local function onWifiDisconnected(info)
-	print("Disconnected from wifi")
-	table.foreach(info, inspect)
+	if is_debug then
+		print("Disconnected from wifi")
+		table.foreach(info, inspect)
+	end
 	stop()
 end
 
 local function onWifiGotIp(info)
-	print("Got IP")
-	table.foreach(info, inspect)
+	if is_debug then
+		print("Got IP")
+		table.foreach(info, inspect)
+	end
 	start()
 end
+
+wifi.setmode(wifi.STATION)
 
 -- use low range, slow, less power hungry mode
 wifi.setphymode(wifi.PHYMODE_N)
 
 -- wifi config, this will survive restart
 wifi.sta.config({
-	ssid="Telia-AAF302",
-	pwd="5L6PFN3WDIXMUJ",
+	ssid=wifi_ssid,
+	pwd=wifi_pwd,
 	auto=true,
 	save=true,
 	connected_cb=onWifiConnected,

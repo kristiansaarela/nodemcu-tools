@@ -8,6 +8,16 @@ Difference scripts for NodeMCU
  - Memory: 128kB
  - Flash: 4MB
 
+## build
+
+### `a`
+
+`dht`, `file`, `gpio`, `http`, `i2c`, `net`, `node`, `timer`, `uart`, `websocket`, `wifi`
+
+### `nodemcu-master-10-modules-2018-08-16-18-02-46-*.bin`
+
+`cron`, `dht`, `file`, `gpio`, `http`, `net`, `node`, `tmr`, `uart`, `wifi`
+
 ## installation
 
 `yarn`
